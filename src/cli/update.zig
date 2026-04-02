@@ -42,7 +42,8 @@ pub fn run(args: *std.process.ArgIterator) !void {
     }
 
     cli.printOut("\nApplying dotfiles...\n", .{});
-    var apply_args = std.process.args();
+    var apply_args = try std.process.argsWithAllocator(allocator);
+    defer apply_args.deinit();
     _ = apply_args.skip();
     _ = apply_args.skip();
     try apply_cmd.run(&apply_args);
