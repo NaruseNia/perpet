@@ -1,0 +1,82 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-linux
+            os: ubuntu-latest
+          - target: aarch64-linux
+            os: ubuntu-latest
+          - target: x86_64-macos
+            os: macos-latest
+          - target: aarch64-macos
+            os: macos-latest
+          - target: x86_64-windows
+            os: ubuntu-latest
+            ext: .exe
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Zig
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.15.2
+
+      - name: Build
+        run: zig build -Doptimize=ReleaseSafe -Dtarget=${{ matrix.target }}
+
+      - name: Run tests
+        if: ${{ !contains(matrix.target, 'windows') && !contains(matrix.target, 'aarch64-linux') }}
+        run: zig build test
+
+      - name: Package
+        run: |
+          ARCHIVE_NAME="perpet-${{ github.ref_name }}-${{ matrix.target }}"
+          mkdir -p "${ARCHIVE_NAME}"
+          cp zig-out/bin/perpet${{ matrix.ext || '' }} "${ARCHIVE_NAME}/"
+          cp README.md LICENSE* 2>/dev/null || true
+          if [[ "${{ matrix.target }}" == *windows* ]]; then
+            zip -r "${ARCHIVE_NAME}.zip" "${ARCHIVE_NAME}"
+            echo "ASSET=${ARCHIVE_NAME}.zip" >> "$GITHUB_ENV"
+          else
+            tar czf "${ARCHIVE_NAME}.tar.gz" "${ARCHIVE_NAME}"
+            echo "ASSET=${ARCHIVE_NAME}.tar.gz" >> "$GITHUB_ENV"
+          fi
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: perpet-${{ matrix.target }}
+          path: ${{ env.ASSET }}
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: artifacts/*
