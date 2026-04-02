@@ -2,7 +2,12 @@ const std = @import("std");
 const cli = @import("perpet").cli;
 
 pub fn main() !void {
-    var args = std.process.args();
+    var gpa: std.heap.GeneralPurposeAllocator(.{}) = .init;
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
+    var args = try std.process.argsWithAllocator(allocator);
+    defer args.deinit();
     _ = args.skip();
 
     const subcommand = args.next() orelse {
