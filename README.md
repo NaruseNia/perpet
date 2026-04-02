@@ -20,7 +20,12 @@ Less complex than chezmoi, more powerful than GNU Stow — the sweet spot for do
 ### Installation
 
 ```bash
-# Build from source (requires Zig 0.15.2 or later)
+curl -fsSL https://raw.githubusercontent.com/NaruseNia/perpet/main/scripts/install.sh | sh
+```
+
+Or build from source (requires Zig 0.15.2 or later):
+
+```bash
 git clone https://github.com/NaruseNia/perpet.git
 cd perpet
 zig build -Doptimize=ReleaseSafe

@@ -20,7 +20,12 @@ chezmoi ほど複雑ではなく、GNU Stow より高機能な、ちょうどい
 ### インストール
 
 ```bash
-# ソースからビルド（Zig 0.15.2 以上が必要）
+curl -fsSL https://raw.githubusercontent.com/NaruseNia/perpet/main/scripts/install.sh | sh
+```
+
+ソースからビルドする場合（Zig 0.15.2 以上が必要）：
+
+```bash
 git clone https://github.com/NaruseNia/perpet.git
 cd perpet
 zig build -Doptimize=ReleaseSafe
