@@ -18,7 +18,7 @@ pub fn run(args: *std.process.ArgIterator) !void {
         }
     }
 
-    const rel_path = path orelse {
+    const raw_path = path orelse {
         cli.printErr("perpet add: missing file path\n", .{});
         cli.printErr("Usage: perpet add <path> [--template]\n", .{});
         std.process.exit(1);
@@ -26,8 +26,15 @@ pub fn run(args: *std.process.ArgIterator) !void {
 
     const home_dir = try core.paths.getHomeDir(allocator);
     defer allocator.free(home_dir);
-    const abs_path = try std.fs.path.join(allocator, &.{ home_dir, rel_path });
+
+    // Normalize input to an absolute path, then derive the $HOME-relative path
+    const abs_path = try resolveToAbsolute(allocator, raw_path, home_dir);
     defer allocator.free(abs_path);
+
+    const rel_path = toHomeRelative(abs_path, home_dir) orelse {
+        cli.printErr("perpet add: path is outside $HOME: {s}\n", .{abs_path});
+        std.process.exit(1);
+    };
 
     if (!core.fs_ops.fileExists(abs_path)) {
         cli.printErr("perpet add: not found: {s}\n", .{abs_path});
@@ -37,7 +44,6 @@ pub fn run(args: *std.process.ArgIterator) !void {
     var added_count: usize = 0;
 
     if (core.fs_ops.isDirectory(abs_path)) {
-        // Recursive directory add
         added_count = try addDirectory(allocator, home_dir, rel_path, as_template);
     } else {
         try addSingleFile(allocator, home_dir, rel_path, as_template);
@@ -71,6 +77,35 @@ pub fn run(args: *std.process.ArgIterator) !void {
             defer commit_result.deinit(allocator);
         }
     }
+}
+
+/// Resolve user input to an absolute path.
+/// Handles: absolute paths, ~/... paths, and relative paths (joined with $HOME).
+fn resolveToAbsolute(allocator: std.mem.Allocator, input: []const u8, home_dir: []const u8) ![]const u8 {
+    if (input.len >= 2 and input[0] == '~' and input[1] == '/') {
+        // ~/... → $HOME/...
+        return std.fs.path.join(allocator, &.{ home_dir, input[2..] });
+    }
+
+    if (std.fs.path.isAbsolute(input)) {
+        return allocator.dupe(u8, input);
+    }
+
+    // Relative path like ".config/nvim" → treat as relative to $HOME
+    return std.fs.path.join(allocator, &.{ home_dir, input });
+}
+
+/// Strip $HOME prefix to get the relative path. Returns null if outside $HOME.
+fn toHomeRelative(abs_path: []const u8, home_dir: []const u8) ?[]const u8 {
+    if (std.mem.startsWith(u8, abs_path, home_dir)) {
+        var rest = abs_path[home_dir.len..];
+        if (rest.len > 0 and rest[0] == '/') {
+            rest = rest[1..];
+        }
+        if (rest.len == 0) return null;
+        return rest;
+    }
+    return null;
 }
 
 fn addDirectory(allocator: std.mem.Allocator, home_dir: []const u8, rel_path: []const u8, as_template: bool) !usize {
