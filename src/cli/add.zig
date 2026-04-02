@@ -122,6 +122,9 @@ fn addDirectory(allocator: std.mem.Allocator, home_dir: []const u8, rel_path: []
     while (walker.next() catch null) |entry| {
         if (entry.kind != .file) continue;
 
+        // Skip .git directory contents
+        if (std.mem.startsWith(u8, entry.path, ".git/") or std.mem.eql(u8, entry.path, ".git")) continue;
+
         const file_rel = std.fs.path.join(allocator, &.{ rel_path, entry.path }) catch continue;
         defer allocator.free(file_rel);
 
