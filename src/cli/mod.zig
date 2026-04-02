@@ -74,7 +74,7 @@ const usage_text =
     \\  edit <path>       Open a source file in your editor
     \\  list              List all managed files
     \\  update            Pull from remote and apply
-    \\  config [edit]     Show or edit perpet.toml
+    \\  config [sub]      Show, edit, or generate perpet.toml
     \\  cd                Print source directory path
     \\  git <args...>     Run git commands in source repository
     \\

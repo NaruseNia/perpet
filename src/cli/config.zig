@@ -14,9 +14,11 @@ pub fn run(args: *std.process.ArgIterator) !void {
             return editConfig(allocator);
         } else if (std.mem.eql(u8, cmd, "path")) {
             return showPath(allocator);
+        } else if (std.mem.eql(u8, cmd, "generate")) {
+            return generateConfig(allocator);
         } else {
             cli.printErr("error: unknown config subcommand '{s}'\n", .{cmd});
-            cli.printErr("usage: perpet config [edit|path]\n", .{});
+            cli.printErr("usage: perpet config [edit|path|generate]\n", .{});
             std.process.exit(1);
         }
     }
@@ -100,6 +102,51 @@ fn editConfig(allocator: std.mem.Allocator) !void {
 
     try child.spawn();
     _ = try child.wait();
+}
+
+fn generateConfig(allocator: std.mem.Allocator) !void {
+    const config_path = core.paths.getConfigPath(allocator) catch |err| {
+        cli.printErr("error: {}\n", .{err});
+        std.process.exit(1);
+    };
+    defer allocator.free(config_path);
+
+    if (core.fs_ops.fileExists(config_path)) {
+        cli.printErr("error: perpet.toml already exists at {s}\n", .{config_path});
+        cli.printErr("  hint: use 'perpet config edit' to modify it\n", .{});
+        std.process.exit(1);
+    }
+
+    const source_dir = core.paths.getSourceDir(allocator) catch |err| {
+        cli.printErr("error: {}\n", .{err});
+        std.process.exit(1);
+    };
+    defer allocator.free(source_dir);
+
+    if (!core.fs_ops.fileExists(source_dir)) {
+        cli.printErr("error: perpet is not initialized\n", .{});
+        cli.printErr("  hint: run 'perpet init' first\n", .{});
+        std.process.exit(1);
+    }
+
+    var cfg = core.config.defaults(allocator) catch |err| {
+        cli.printErr("error: {}\n", .{err});
+        std.process.exit(1);
+    };
+    defer cfg.deinit();
+
+    const toml_content = core.config.serialize(allocator, &cfg) catch |err| {
+        cli.printErr("error: {}\n", .{err});
+        std.process.exit(1);
+    };
+    defer allocator.free(toml_content);
+
+    core.fs_ops.writeContent(allocator, config_path, toml_content) catch |err| {
+        cli.printErr("error: failed to write config: {}\n", .{err});
+        std.process.exit(1);
+    };
+
+    cli.printOut("Generated {s}\n", .{config_path});
 }
 
 fn showPath(allocator: std.mem.Allocator) !void {

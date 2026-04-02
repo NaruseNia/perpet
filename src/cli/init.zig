@@ -47,6 +47,19 @@ fn cloneFromRemote(allocator: std.mem.Allocator, remote_url: []const u8, source_
         }
         std.process.exit(1);
     }
+
+    // Generate perpet.toml if the cloned repo doesn't have one
+    const config_path = try core.paths.getConfigPath(allocator);
+    defer allocator.free(config_path);
+    if (!core.fs_ops.fileExists(config_path)) {
+        var cfg = try core.config.defaults(allocator);
+        defer cfg.deinit();
+        const toml_content = try core.config.serialize(allocator, &cfg);
+        defer allocator.free(toml_content);
+        try core.fs_ops.writeContent(allocator, config_path, toml_content);
+        cli.printOut("Generated perpet.toml (not found in repository)\n", .{});
+    }
+
     cli.printOut("\nCreated {s}\n", .{source_dir});
     cli.printOut("Run 'perpet apply' to deploy your dotfiles.\n", .{});
 }
