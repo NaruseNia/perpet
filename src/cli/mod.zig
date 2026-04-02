@@ -99,10 +99,9 @@ pub fn printErr(comptime fmt: []const u8, args: anytype) void {
 
 /// Write to stdout.
 pub fn printOut(comptime fmt: []const u8, args: anytype) void {
-    var buf: [4096]u8 = undefined;
-    var w = std.fs.File.stdout().writer(&buf);
-    w.interface.print(fmt, args) catch {};
-    w.interface.flush() catch {};
+    var buf: [8192]u8 = undefined;
+    const output = std.fmt.bufPrint(&buf, fmt, args) catch return;
+    std.fs.File.stdout().writeAll(output) catch {};
 }
 
 test "parseCommand recognizes all commands" {

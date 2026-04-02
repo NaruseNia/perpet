@@ -20,7 +20,7 @@ zig build test               # 全テスト実行
 src/
   main.zig          # エントリポイント: 引数パース → cli/mod.zig にディスパッチ
   root.zig          # ライブラリモジュール（core/ を再エクスポート）
-  cli/              # サブコマンド実装。各ファイルが pub fn run(allocator, args) !void をエクスポート
+  cli/              # サブコマンド実装。各ファイルが pub fn run(args: *ArgIterator) !void をエクスポート
     mod.zig         # ディスパッチャ + ヘルプテキスト
   core/             # ビジネスロジック。CLI に依存しない
     config.zig      # Config 型の定義とロード/セーブ
@@ -56,3 +56,9 @@ src/
 - TOML パーサーは完全な TOML 仕様ではなく、perpet.toml に必要な最小限のサブセットのみ実装
 - クロスプラットフォーム対応: パス操作には必ず `std.fs.path` を使用
 - テストは各 core/ モジュールに `test` ブロックとして記述
+- Zig 0.15 の API 注意点:
+  - `std.ArrayList(T)` は unmanaged: `.empty` で初期化、`deinit(allocator)` / `append(allocator, item)` / `toOwnedSlice(allocator)`
+  - `std.StringHashMap(V)` は managed: `.init(allocator)` で初期化、`deinit()` で解放
+  - `std.process.Child.StdIo` は PascalCase: `.Pipe`, `.Inherit`, `.Ignore`
+  - `File.writer(buffer)` は `[]u8` バッファが必要。直接 `File.writeAll()` の方がシンプル
+  - CLI サブコマンドは `@import("../core/mod.zig")` で core にアクセス（`@import("perpet")` は不可）
