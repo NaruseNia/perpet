@@ -1,8 +1,6 @@
 const std = @import("std");
-
-/// Single source of truth for the version string.
-/// Keep in sync with build.zig.zon .version field.
-const version = "0.1.0";
+const zon = @import("build.zig.zon");
+const version = zon.version;
 
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
