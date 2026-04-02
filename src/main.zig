@@ -28,6 +28,7 @@ pub fn main() !void {
         .update => try cli.update_cmd.run(&args),
         .cd => try cli.cd_cmd.run(&args),
         .git => try cli.git_cmd.run(&args),
+        .config => try cli.config_cmd.run(&args),
         .help => cli.printUsage(),
         .version => cli.printVersion(),
     }

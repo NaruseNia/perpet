@@ -13,6 +13,7 @@ pub const list_cmd = @import("list.zig");
 pub const update_cmd = @import("update.zig");
 pub const cd_cmd = @import("cd.zig");
 pub const git_cmd = @import("git.zig");
+pub const config_cmd = @import("config.zig");
 
 pub const Command = enum {
     init,
@@ -26,6 +27,7 @@ pub const Command = enum {
     update,
     cd,
     git,
+    config,
     help,
     version,
 };
@@ -46,6 +48,7 @@ pub fn parseCommand(arg: []const u8) ?Command {
         .{ "update", .update },
         .{ "cd", .cd },
         .{ "git", .git },
+        .{ "config", .config },
         .{ "help", .help },
         .{ "--help", .help },
         .{ "-h", .help },
@@ -71,6 +74,7 @@ const usage_text =
     \\  edit <path>       Open a source file in your editor
     \\  list              List all managed files
     \\  update            Pull from remote and apply
+    \\  config [edit]     Show or edit perpet.toml
     \\  cd                Print source directory path
     \\  git <args...>     Run git commands in source repository
     \\
@@ -105,6 +109,58 @@ pub fn printOut(comptime fmt: []const u8, args: anytype) void {
     std.fs.File.stdout().writeAll(output) catch {};
 }
 
+/// Prompt the user for input. Shows `label (default): ` and returns the input,
+/// or the default if the user just presses Enter.
+pub fn prompt(allocator: std.mem.Allocator, label: []const u8, default: []const u8) ![]const u8 {
+    if (default.len > 0) {
+        printOut("  {s} ({s}): ", .{ label, default });
+    } else {
+        printOut("  {s}: ", .{label});
+    }
+
+    return readLine(allocator, default);
+}
+
+/// Prompt the user with a yes/no question. Returns true for yes.
+pub fn promptYesNo(label: []const u8, default: bool) bool {
+    const hint = if (default) "Y/n" else "y/N";
+    printOut("  {s} ({s}): ", .{ label, hint });
+
+    var buf: [1024]u8 = undefined;
+    const line = readLineRaw(&buf) orelse return default;
+    const trimmed = std.mem.trim(u8, line, " \t\r");
+    if (trimmed.len == 0) return default;
+    return trimmed[0] == 'y' or trimmed[0] == 'Y';
+}
+
+fn readLine(allocator: std.mem.Allocator, default: []const u8) ![]const u8 {
+    var buf: [1024]u8 = undefined;
+    const line = readLineRaw(&buf) orelse return allocator.dupe(u8, default);
+    const trimmed = std.mem.trim(u8, line, " \t\r");
+    if (trimmed.len == 0) return allocator.dupe(u8, default);
+    return allocator.dupe(u8, trimmed);
+}
+
+/// Read one line from stdin (up to '\n'), byte by byte.
+fn readLineRaw(buf: []u8) ?[]const u8 {
+    const stdin = std.fs.File.stdin();
+    var i: usize = 0;
+    while (i < buf.len) {
+        var byte: [1]u8 = undefined;
+        const n = stdin.read(&byte) catch return null;
+        if (n == 0) {
+            // EOF
+            return if (i > 0) buf[0..i] else null;
+        }
+        if (byte[0] == '\n') {
+            return buf[0..i];
+        }
+        buf[i] = byte[0];
+        i += 1;
+    }
+    return buf[0..i];
+}
+
 test "parseCommand recognizes all commands" {
     try std.testing.expectEqual(Command.init, parseCommand("init").?);
     try std.testing.expectEqual(Command.add, parseCommand("add").?);
@@ -115,5 +171,6 @@ test "parseCommand recognizes all commands" {
     try std.testing.expectEqual(Command.list, parseCommand("ls").?);
     try std.testing.expectEqual(Command.help, parseCommand("--help").?);
     try std.testing.expectEqual(Command.version, parseCommand("-v").?);
+    try std.testing.expectEqual(Command.config, parseCommand("config").?);
     try std.testing.expect(parseCommand("nonexistent") == null);
 }

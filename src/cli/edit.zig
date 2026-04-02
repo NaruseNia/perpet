@@ -21,12 +21,26 @@ pub fn run(args: *std.process.ArgIterator) !void {
 
     const editor = if (cfg.editor.len > 0)
         cfg.editor
-    else
-        std.process.getEnvVarOwned(allocator, "EDITOR") catch {
-            cli.printErr("error: no editor configured\n", .{});
-            cli.printErr("  hint: set $EDITOR or add 'editor = \"vim\"' to perpet.toml [settings]\n", .{});
-            std.process.exit(1);
-        };
+    else blk: {
+        const env_editor = std.process.getEnvVarOwned(allocator, "EDITOR") catch break :blk @as([]const u8, "");
+        if (env_editor.len == 0) {
+            allocator.free(env_editor);
+            break :blk @as([]const u8, "");
+        }
+        break :blk env_editor;
+    };
+
+    if (editor.len == 0) {
+        cli.printErr("error: no editor configured\n", .{});
+        cli.printErr("\n", .{});
+        cli.printErr("  To fix this, do one of the following:\n", .{});
+        cli.printErr("    1. Set the $EDITOR environment variable:\n", .{});
+        cli.printErr("       export EDITOR=vim   # add to your .bashrc/.zshrc\n", .{});
+        cli.printErr("    2. Or set it in perpet.toml:\n", .{});
+        cli.printErr("       [settings]\n", .{});
+        cli.printErr("       editor = \"vim\"\n", .{});
+        std.process.exit(1);
+    }
 
     // Find the source file (try with and without .tmpl)
     const mirror_path = core.paths.resolveSourcePath(allocator, rel_path) catch |err| {
