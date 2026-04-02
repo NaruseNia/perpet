@@ -19,26 +19,25 @@ pub fn run(args: *std.process.ArgIterator) !void {
     }
 
     const rel_path = path orelse {
-        cli.printErr("perpet remove: missing file path\n", .{});
-        cli.printErr("Usage: perpet remove <path> [--restore]\n", .{});
+        cli.printErr("error: missing file path\n", .{});
+        cli.printErr("usage: perpet remove <path> [--restore]\n", .{});
         std.process.exit(1);
     };
 
-    // Try both with and without .tmpl suffix
     const mirror_path = core.paths.resolveSourcePath(allocator, rel_path) catch |err| {
-        cli.printErr("perpet remove: {}\n", .{err});
+        cli.printErr("error: {}\n", .{err});
         std.process.exit(1);
     };
     defer allocator.free(mirror_path);
 
     const tmpl_name = std.fmt.allocPrint(allocator, "{s}.tmpl", .{rel_path}) catch |err| {
-        cli.printErr("perpet remove: {}\n", .{err});
+        cli.printErr("error: {}\n", .{err});
         std.process.exit(1);
     };
     defer allocator.free(tmpl_name);
 
     const tmpl_mirror_path = core.paths.resolveSourcePath(allocator, tmpl_name) catch |err| {
-        cli.printErr("perpet remove: {}\n", .{err});
+        cli.printErr("error: {}\n", .{err});
         std.process.exit(1);
     };
     defer allocator.free(tmpl_mirror_path);
@@ -48,31 +47,31 @@ pub fn run(args: *std.process.ArgIterator) !void {
     else if (core.fs_ops.fileExists(tmpl_mirror_path))
         tmpl_mirror_path
     else {
-        cli.printErr("perpet remove: not managed: {s}\n", .{rel_path});
+        cli.printErr("error: '{s}' is not managed by perpet\n", .{rel_path});
+        cli.printErr("  hint: run 'perpet list' to see managed files\n", .{});
         std.process.exit(1);
     };
 
-    // Restore: remove symlink/copy from $HOME
     if (restore) {
         const target_path = core.paths.resolveTargetPath(allocator, rel_path) catch |err| {
-            cli.printErr("perpet remove: {}\n", .{err});
+            cli.printErr("error: {}\n", .{err});
             return;
         };
         defer allocator.free(target_path);
 
         if (core.fs_ops.isSymlink(target_path)) {
             std.fs.deleteFileAbsolute(target_path) catch {};
-            cli.printOut("Removed symlink {s}\n", .{target_path});
+            cli.printOut("  - {s} (symlink removed from $HOME)\n", .{rel_path});
         }
     }
 
-    // Delete from mirror
     std.fs.deleteFileAbsolute(actual_path) catch |err| {
-        cli.printErr("perpet remove: failed to delete {s}: {}\n", .{ actual_path, err });
+        cli.printErr("error: failed to delete {s}: {}\n", .{ actual_path, err });
         std.process.exit(1);
     };
 
-    cli.printOut("Removed {s}\n", .{rel_path});
+    cli.printOut("  - {s}\n", .{rel_path});
+    cli.printOut("\nRemoved from perpet management.\n", .{});
 
     // Auto-commit if configured
     var cfg = core.config.load(allocator) catch return;
@@ -90,6 +89,9 @@ pub fn run(args: *std.process.ArgIterator) !void {
             defer allocator.free(msg);
             var commit_result = core.git_ops.gitCommit(allocator, source_dir, msg) catch return;
             defer commit_result.deinit(allocator);
+            if (commit_result.success) {
+                cli.printOut("Committed to git.\n", .{});
+            }
         }
     }
 }

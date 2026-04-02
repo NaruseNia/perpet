@@ -10,18 +10,18 @@ pub fn run(args: *std.process.ArgIterator) !void {
     const filter_path = args.next();
 
     var cfg = core.config.load(allocator) catch |err| {
-        cli.printErr("perpet diff: failed to load config: {}\n", .{err});
+        cli.printErr("error: failed to load config: {}\n", .{err});
         std.process.exit(1);
     };
     defer cfg.deinit();
 
     const files = core.manifest.enumerate(allocator, &cfg) catch |err| {
-        cli.printErr("perpet diff: failed to enumerate files: {}\n", .{err});
+        cli.printErr("error: failed to read managed files: {}\n", .{err});
         std.process.exit(1);
     };
     defer core.manifest.freeFiles(allocator, files);
 
-    var found = false;
+    var diff_count: usize = 0;
     for (files) |file| {
         if (filter_path) |fp| {
             if (!std.mem.eql(u8, file.target_rel, fp)) continue;
@@ -48,26 +48,30 @@ pub fn run(args: *std.process.ArgIterator) !void {
         defer if (source_allocated) allocator.free(source_content);
 
         const target_content = core.fs_ops.readFile(allocator, target_path) catch {
-            cli.printOut("--- {s} (source)\n+++ {s} (missing)\n", .{ file.target_rel, file.target_rel });
-            found = true;
+            cli.printOut("=== {s} ===\n", .{file.target_rel});
+            cli.printOut("  (target file does not exist)\n\n", .{});
+            diff_count += 1;
             continue;
         };
         defer allocator.free(target_content);
 
         if (!std.mem.eql(u8, source_content, target_content)) {
-            cli.printOut("--- {s} (source)\n+++ {s} (target)\n", .{ file.target_rel, file.target_rel });
-            // Simple line-by-line diff
+            cli.printOut("=== {s} ===\n", .{file.target_rel});
             printSimpleDiff(source_content, target_content);
-            found = true;
+            cli.printOut("\n", .{});
+            diff_count += 1;
         }
     }
 
-    if (!found) {
+    if (diff_count == 0) {
         if (filter_path) |fp| {
-            cli.printOut("No differences for {s}.\n", .{fp});
+            cli.printOut("No differences found for '{s}'.\n", .{fp});
         } else {
-            cli.printOut("No differences.\n", .{});
+            cli.printOut("Everything is in sync.\n", .{});
         }
+    } else {
+        cli.printOut("{d} file{s} differ.\n", .{ diff_count, if (diff_count != 1) "s" else "" });
+        cli.printOut("  hint: run 'perpet apply' to sync\n", .{});
     }
 }
 
@@ -84,14 +88,13 @@ fn printSimpleDiff(source: []const u8, target: []const u8) void {
 
         if (src_line != null and tgt_line != null) {
             if (!std.mem.eql(u8, src_line.?, tgt_line.?)) {
-                cli.printOut("@@ line {d} @@\n", .{line_num});
-                cli.printOut("-{s}\n", .{src_line.?});
-                cli.printOut("+{s}\n", .{tgt_line.?});
+                cli.printOut("  {d}: - {s}\n", .{ line_num, src_line.? });
+                cli.printOut("  {d}: + {s}\n", .{ line_num, tgt_line.? });
             }
         } else if (src_line) |sl| {
-            cli.printOut("-{s}\n", .{sl});
+            cli.printOut("  {d}: - {s}\n", .{ line_num, sl });
         } else if (tgt_line) |tl| {
-            cli.printOut("+{s}\n", .{tl});
+            cli.printOut("  {d}: + {s}\n", .{ line_num, tl });
         }
 
         line_num += 1;

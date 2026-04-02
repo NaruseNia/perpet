@@ -12,32 +12,32 @@ pub fn run(args: *std.process.ArgIterator) !void {
     const source_dir = try core.paths.getSourceDir(allocator);
     defer allocator.free(source_dir);
 
-    // Check if source dir already exists
     if (core.fs_ops.fileExists(source_dir)) {
-        cli.printErr("perpet: source directory already exists: {s}\n", .{source_dir});
-        cli.printErr("Remove it first or use 'perpet update' to sync.\n", .{});
+        cli.printErr("error: source directory already exists at {s}\n", .{source_dir});
+        cli.printErr("  hint: remove it first, or use 'perpet update' to pull latest changes\n", .{});
         std.process.exit(1);
     }
 
     if (url) |remote_url| {
-        // Clone from remote
-        cli.printOut("Cloning from {s}...\n", .{remote_url});
+        cli.printOut("Cloning {s} ...\n", .{remote_url});
         var result = try core.git_ops.gitClone(allocator, remote_url, source_dir);
         defer result.deinit(allocator);
         if (!result.success) {
-            cli.printErr("perpet: git clone failed:\n{s}", .{result.stderr});
+            cli.printErr("error: git clone failed\n", .{});
+            if (result.stderr.len > 0) {
+                cli.printErr("{s}", .{result.stderr});
+            }
             std.process.exit(1);
         }
-        cli.printOut("Cloned to {s}\n", .{source_dir});
+        cli.printOut("\n  Created {s}\n", .{source_dir});
+        cli.printOut("\n  Run 'perpet apply' to deploy your dotfiles.\n", .{});
     } else {
-        // Create new source directory
         try std.fs.makeDirAbsolute(source_dir);
 
         const home_dir = try core.paths.getHomeMirrorDir(allocator);
         defer allocator.free(home_dir);
         try std.fs.makeDirAbsolute(home_dir);
 
-        // Generate default perpet.toml
         var cfg = try core.config.defaults(allocator);
         defer cfg.deinit();
         const toml_content = try core.config.serialize(allocator, &cfg);
@@ -47,14 +47,16 @@ pub fn run(args: *std.process.ArgIterator) !void {
         defer allocator.free(config_path);
         try core.fs_ops.writeContent(allocator, config_path, toml_content);
 
-        // git init
         var result = try core.git_ops.gitInit(allocator, source_dir);
         defer result.deinit(allocator);
         if (!result.success) {
-            cli.printErr("perpet: git init failed:\n{s}", .{result.stderr});
+            cli.printErr("warning: git init failed (git may not be installed)\n", .{});
         }
 
-        cli.printOut("Initialized perpet at {s}\n", .{source_dir});
-        cli.printOut("Edit {s} to configure variables.\n", .{config_path});
+        cli.printOut("\n  Initialized perpet at {s}\n", .{source_dir});
+        cli.printOut("\n  Next steps:\n", .{});
+        cli.printOut("    1. Edit {s} to set your variables\n", .{config_path});
+        cli.printOut("    2. Run 'perpet add <file>' to start managing dotfiles\n", .{});
+        cli.printOut("    3. Run 'perpet apply' to create symlinks\n", .{});
     }
 }

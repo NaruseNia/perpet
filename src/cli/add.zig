@@ -19,31 +19,32 @@ pub fn run(args: *std.process.ArgIterator) !void {
     }
 
     const raw_path = path orelse {
-        cli.printErr("perpet add: missing file path\n", .{});
-        cli.printErr("Usage: perpet add <path> [--template]\n", .{});
+        cli.printErr("error: missing file path\n", .{});
+        cli.printErr("usage: perpet add <path> [--template]\n", .{});
         std.process.exit(1);
     };
 
     const home_dir = try core.paths.getHomeDir(allocator);
     defer allocator.free(home_dir);
 
-    // Normalize input to an absolute path, then derive the $HOME-relative path
     const abs_path = try resolveToAbsolute(allocator, raw_path, home_dir);
     defer allocator.free(abs_path);
 
     const rel_path = toHomeRelative(abs_path, home_dir) orelse {
-        cli.printErr("perpet add: path is outside $HOME: {s}\n", .{abs_path});
+        cli.printErr("error: path is outside $HOME: {s}\n", .{abs_path});
+        cli.printErr("  hint: perpet can only manage files under your home directory\n", .{});
         std.process.exit(1);
     };
 
     if (!core.fs_ops.fileExists(abs_path)) {
-        cli.printErr("perpet add: not found: {s}\n", .{abs_path});
+        cli.printErr("error: no such file or directory: {s}\n", .{abs_path});
         std.process.exit(1);
     }
 
     var added_count: usize = 0;
 
     if (core.fs_ops.isDirectory(abs_path)) {
+        cli.printOut("Adding files from {s}/\n", .{rel_path});
         added_count = try addDirectory(allocator, home_dir, rel_path, as_template);
     } else {
         try addSingleFile(allocator, home_dir, rel_path, as_template);
@@ -51,13 +52,12 @@ pub fn run(args: *std.process.ArgIterator) !void {
     }
 
     if (added_count == 0) {
-        cli.printOut("No files found in {s}\n", .{rel_path});
+        cli.printOut("No files found in {s}/\n", .{rel_path});
         return;
     }
 
-    if (added_count > 1) {
-        cli.printOut("\nAdded {d} files.\n", .{added_count});
-    }
+    cli.printOut("\nAdded {d} file{s}.\n", .{ added_count, if (added_count != 1) "s" else "" });
+    cli.printOut("Run 'perpet apply' to deploy.\n", .{});
 
     // Auto-commit if configured
     var cfg = core.config.load(allocator) catch return;
@@ -75,33 +75,27 @@ pub fn run(args: *std.process.ArgIterator) !void {
             defer allocator.free(msg);
             var commit_result = try core.git_ops.gitCommit(allocator, source_dir, msg);
             defer commit_result.deinit(allocator);
+            if (commit_result.success) {
+                cli.printOut("Committed to git.\n", .{});
+            }
         }
     }
 }
 
-/// Resolve user input to an absolute path.
-/// Handles: absolute paths, ~/... paths, and relative paths (joined with $HOME).
 fn resolveToAbsolute(allocator: std.mem.Allocator, input: []const u8, home_dir: []const u8) ![]const u8 {
     if (input.len >= 2 and input[0] == '~' and input[1] == '/') {
-        // ~/... → $HOME/...
         return std.fs.path.join(allocator, &.{ home_dir, input[2..] });
     }
-
     if (std.fs.path.isAbsolute(input)) {
         return allocator.dupe(u8, input);
     }
-
-    // Relative path like ".config/nvim" → treat as relative to $HOME
     return std.fs.path.join(allocator, &.{ home_dir, input });
 }
 
-/// Strip $HOME prefix to get the relative path. Returns null if outside $HOME.
 fn toHomeRelative(abs_path: []const u8, home_dir: []const u8) ?[]const u8 {
     if (std.mem.startsWith(u8, abs_path, home_dir)) {
         var rest = abs_path[home_dir.len..];
-        if (rest.len > 0 and rest[0] == '/') {
-            rest = rest[1..];
-        }
+        if (rest.len > 0 and rest[0] == '/') rest = rest[1..];
         if (rest.len == 0) return null;
         return rest;
     }
@@ -113,13 +107,13 @@ fn addDirectory(allocator: std.mem.Allocator, home_dir: []const u8, rel_path: []
     defer allocator.free(abs_dir);
 
     var dir = std.fs.openDirAbsolute(abs_dir, .{ .iterate = true }) catch |err| {
-        cli.printErr("perpet add: failed to open directory {s}: {}\n", .{ rel_path, err });
+        cli.printErr("error: cannot open directory {s}: {}\n", .{ rel_path, err });
         std.process.exit(1);
     };
     defer dir.close();
 
     var walker = dir.walk(allocator) catch |err| {
-        cli.printErr("perpet add: failed to walk directory {s}: {}\n", .{ rel_path, err });
+        cli.printErr("error: cannot read directory {s}: {}\n", .{ rel_path, err });
         std.process.exit(1);
     };
     defer walker.deinit();
@@ -132,7 +126,7 @@ fn addDirectory(allocator: std.mem.Allocator, home_dir: []const u8, rel_path: []
         defer allocator.free(file_rel);
 
         addSingleFile(allocator, home_dir, file_rel, as_template) catch |err| {
-            cli.printErr("  ERROR {s}: {}\n", .{ file_rel, err });
+            cli.printErr("  ! {s}: {}\n", .{ file_rel, err });
             continue;
         };
         count += 1;
@@ -157,6 +151,9 @@ fn addSingleFile(allocator: std.mem.Allocator, home_dir: []const u8, rel_path: [
     try core.fs_ops.ensureParentDirs(allocator, mirror_path);
     try std.fs.copyFileAbsolute(source_file, mirror_path, .{});
 
-    const tmpl_str = if (as_template) " (template)" else "";
-    cli.printOut("  {s}{s}\n", .{ rel_path, tmpl_str });
+    if (as_template) {
+        cli.printOut("  + {s} (template)\n", .{rel_path});
+    } else {
+        cli.printOut("  + {s}\n", .{rel_path});
+    }
 }

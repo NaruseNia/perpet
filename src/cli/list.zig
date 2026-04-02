@@ -9,30 +9,34 @@ pub fn run(args: *std.process.ArgIterator) !void {
     const allocator = gpa_state.allocator();
 
     var cfg = core.config.load(allocator) catch |err| {
-        cli.printErr("perpet list: failed to load config: {}\n", .{err});
+        cli.printErr("error: failed to load config: {}\n", .{err});
         std.process.exit(1);
     };
     defer cfg.deinit();
 
     const files = core.manifest.enumerate(allocator, &cfg) catch |err| {
-        cli.printErr("perpet list: failed to enumerate files: {}\n", .{err});
+        cli.printErr("error: failed to read managed files: {}\n", .{err});
         std.process.exit(1);
     };
     defer core.manifest.freeFiles(allocator, files);
 
     if (files.len == 0) {
         cli.printOut("No managed files.\n", .{});
+        cli.printOut("  hint: run 'perpet add <file>' to start managing dotfiles\n", .{});
         return;
     }
 
     for (files) |file| {
-        const mode_str = switch (file.mode) {
-            .symlink => "symlink",
-            .copy => "copy   ",
+        const mode_str: []const u8 = switch (file.mode) {
+            .symlink => "symlink ",
+            .copy => "copy    ",
         };
-        const tmpl_str = if (file.is_template) " (template)" else "";
-        cli.printOut("  {s}  {s}{s}\n", .{ mode_str, file.target_rel, tmpl_str });
+        if (file.is_template) {
+            cli.printOut("  {s} {s} (template)\n", .{ mode_str, file.target_rel });
+        } else {
+            cli.printOut("  {s} {s}\n", .{ mode_str, file.target_rel });
+        }
     }
 
-    cli.printOut("\n{d} file(s) managed.\n", .{files.len});
+    cli.printOut("\n{d} file{s} managed.\n", .{ files.len, if (files.len != 1) "s" else "" });
 }
