@@ -1,5 +1,6 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
+const build_options = @import("build_options");
 
 pub const init_cmd = @import("init.zig");
 pub const add_cmd = @import("add.zig");
@@ -89,7 +90,7 @@ pub fn printUsage() void {
 
 pub fn printVersion() void {
     const file = std.fs.File.stdout();
-    file.writeAll("perpet 0.1.0\n") catch {};
+    file.writeAll("perpet " ++ build_options.version ++ "\n") catch {};
 }
 
 /// Write to stderr for error messages.
