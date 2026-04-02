@@ -95,6 +95,13 @@ pub fn fileExists(path: []const u8) bool {
     return true;
 }
 
+/// Check if a path is a directory.
+pub fn isDirectory(path: []const u8) bool {
+    var dir = std.fs.openDirAbsolute(path, .{}) catch return false;
+    dir.close();
+    return true;
+}
+
 /// Check if a path is a symlink by attempting to read it as one.
 pub fn isSymlink(path: []const u8) bool {
     var buf: [std.fs.max_path_bytes]u8 = undefined;

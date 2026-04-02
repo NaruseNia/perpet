@@ -26,34 +26,32 @@ pub fn run(args: *std.process.ArgIterator) !void {
 
     const home_dir = try core.paths.getHomeDir(allocator);
     defer allocator.free(home_dir);
-    const source_file = try std.fs.path.join(allocator, &.{ home_dir, rel_path });
-    defer allocator.free(source_file);
+    const abs_path = try std.fs.path.join(allocator, &.{ home_dir, rel_path });
+    defer allocator.free(abs_path);
 
-    // Verify source file exists in $HOME
-    if (!core.fs_ops.fileExists(source_file)) {
-        cli.printErr("perpet add: file not found: {s}\n", .{source_file});
+    if (!core.fs_ops.fileExists(abs_path)) {
+        cli.printErr("perpet add: not found: {s}\n", .{abs_path});
         std.process.exit(1);
     }
 
-    // Determine target name in home/ mirror
-    const mirror_name = if (as_template)
-        try std.fmt.allocPrint(allocator, "{s}.tmpl", .{rel_path})
-    else
-        try allocator.dupe(u8, rel_path);
-    defer allocator.free(mirror_name);
+    var added_count: usize = 0;
 
-    const mirror_path = try core.paths.resolveSourcePath(allocator, mirror_name);
-    defer allocator.free(mirror_path);
-
-    // Copy the file to the mirror directory
-    try core.fs_ops.ensureParentDirs(allocator, mirror_path);
-    try std.fs.copyFileAbsolute(source_file, mirror_path, .{});
-
-    cli.printOut("Added {s}", .{rel_path});
-    if (as_template) {
-        cli.printOut(" (template)", .{});
+    if (core.fs_ops.isDirectory(abs_path)) {
+        // Recursive directory add
+        added_count = try addDirectory(allocator, home_dir, rel_path, as_template);
+    } else {
+        try addSingleFile(allocator, home_dir, rel_path, as_template);
+        added_count = 1;
     }
-    cli.printOut("\n", .{});
+
+    if (added_count == 0) {
+        cli.printOut("No files found in {s}\n", .{rel_path});
+        return;
+    }
+
+    if (added_count > 1) {
+        cli.printOut("\nAdded {d} files.\n", .{added_count});
+    }
 
     // Auto-commit if configured
     var cfg = core.config.load(allocator) catch return;
@@ -63,7 +61,7 @@ pub fn run(args: *std.process.ArgIterator) !void {
         const source_dir = try core.paths.getSourceDir(allocator);
         defer allocator.free(source_dir);
 
-        var add_result = try core.git_ops.gitAdd(allocator, source_dir, &.{mirror_name});
+        var add_result = try core.git_ops.exec(allocator, source_dir, &.{ "add", "-A" });
         defer add_result.deinit(allocator);
 
         if (add_result.success) {
@@ -73,4 +71,57 @@ pub fn run(args: *std.process.ArgIterator) !void {
             defer commit_result.deinit(allocator);
         }
     }
+}
+
+fn addDirectory(allocator: std.mem.Allocator, home_dir: []const u8, rel_path: []const u8, as_template: bool) !usize {
+    const abs_dir = try std.fs.path.join(allocator, &.{ home_dir, rel_path });
+    defer allocator.free(abs_dir);
+
+    var dir = std.fs.openDirAbsolute(abs_dir, .{ .iterate = true }) catch |err| {
+        cli.printErr("perpet add: failed to open directory {s}: {}\n", .{ rel_path, err });
+        std.process.exit(1);
+    };
+    defer dir.close();
+
+    var walker = dir.walk(allocator) catch |err| {
+        cli.printErr("perpet add: failed to walk directory {s}: {}\n", .{ rel_path, err });
+        std.process.exit(1);
+    };
+    defer walker.deinit();
+
+    var count: usize = 0;
+    while (walker.next() catch null) |entry| {
+        if (entry.kind != .file) continue;
+
+        const file_rel = std.fs.path.join(allocator, &.{ rel_path, entry.path }) catch continue;
+        defer allocator.free(file_rel);
+
+        addSingleFile(allocator, home_dir, file_rel, as_template) catch |err| {
+            cli.printErr("  ERROR {s}: {}\n", .{ file_rel, err });
+            continue;
+        };
+        count += 1;
+    }
+
+    return count;
+}
+
+fn addSingleFile(allocator: std.mem.Allocator, home_dir: []const u8, rel_path: []const u8, as_template: bool) !void {
+    const source_file = try std.fs.path.join(allocator, &.{ home_dir, rel_path });
+    defer allocator.free(source_file);
+
+    const mirror_name = if (as_template)
+        try std.fmt.allocPrint(allocator, "{s}.tmpl", .{rel_path})
+    else
+        try allocator.dupe(u8, rel_path);
+    defer allocator.free(mirror_name);
+
+    const mirror_path = try core.paths.resolveSourcePath(allocator, mirror_name);
+    defer allocator.free(mirror_path);
+
+    try core.fs_ops.ensureParentDirs(allocator, mirror_path);
+    try std.fs.copyFileAbsolute(source_file, mirror_path, .{});
+
+    const tmpl_str = if (as_template) " (template)" else "";
+    cli.printOut("  {s}{s}\n", .{ rel_path, tmpl_str });
 }
