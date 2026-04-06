@@ -71,7 +71,7 @@ const usage_text =
     \\  apply             Apply dotfiles to $HOME
     \\  diff [path]       Show differences between source and target
     \\  status            Show sync status of managed files
-    \\  edit <path>       Open a source file in your editor
+    \\  edit [path]       Open a source file in your editor (interactive if no path)
     \\  list              List all managed files
     \\  update            Pull from remote and apply
     \\  config [sub]      Show, edit, or generate perpet.toml

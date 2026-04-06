@@ -1,23 +1,62 @@
 const std = @import("std");
 const core = @import("../core/mod.zig");
 const cli = @import("mod.zig");
+const select = @import("select.zig");
 
 pub fn run(args: *std.process.ArgIterator) !void {
     var gpa_state: std.heap.GeneralPurposeAllocator(.{}) = .init;
     defer _ = gpa_state.deinit();
     const allocator = gpa_state.allocator();
 
-    const rel_path = args.next() orelse {
-        cli.printErr("error: missing file path\n", .{});
-        cli.printErr("usage: perpet edit <path>\n", .{});
-        std.process.exit(1);
-    };
-
     var cfg = core.config.load(allocator) catch |err| {
         cli.printErr("error: failed to load config: {}\n", .{err});
         std.process.exit(1);
     };
     defer cfg.deinit();
+
+    // If no argument given, show interactive file selector
+    var rel_path_owned = false;
+    const rel_path = args.next() orelse blk: {
+        rel_path_owned = true;
+        const files = core.manifest.enumerate(allocator, &cfg) catch |err| {
+            cli.printErr("error: failed to read managed files: {}\n", .{err});
+            std.process.exit(1);
+        };
+        defer core.manifest.freeFiles(allocator, files);
+
+        if (files.len == 0) {
+            cli.printErr("No managed files.\n", .{});
+            cli.printErr("  hint: run 'perpet add <file>' to start managing dotfiles\n", .{});
+            std.process.exit(1);
+        }
+
+        // Build display list
+        var display_items: std.ArrayList([]const u8) = .empty;
+        defer {
+            for (display_items.items) |item| allocator.free(item);
+            display_items.deinit(allocator);
+        }
+        for (files) |file| {
+            const label = if (file.is_template)
+                std.fmt.allocPrint(allocator, "{s} (template)", .{file.target_rel}) catch {
+                    std.process.exit(1);
+                }
+            else
+                allocator.dupe(u8, file.target_rel) catch {
+                    std.process.exit(1);
+                };
+            display_items.append(allocator, label) catch std.process.exit(1);
+        }
+
+        const selected = select.selectFromList(display_items.items, "Select a file to edit:") orelse {
+            std.process.exit(0);
+        };
+
+        // Return the target_rel of the selected file (need to dupe since files will be freed)
+        break :blk allocator.dupe(u8, files[selected].target_rel) catch std.process.exit(1);
+    };
+
+    defer if (rel_path_owned) allocator.free(rel_path);
 
     const editor = if (cfg.editor.len > 0)
         cfg.editor
