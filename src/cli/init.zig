@@ -2,6 +2,30 @@ const std = @import("std");
 const core = @import("../core/mod.zig");
 const cli = @import("mod.zig");
 
+const default_perpetignore =
+    \\# perpet ignore patterns
+    \\# Files and directories listed here are skipped by 'perpet add <directory>'
+    \\#
+    \\# Syntax:
+    \\#   .DS_Store       exact filename match
+    \\#   *.log           glob pattern (wildcard does not cross directories)
+    \\#   node_modules/   directory prefix (matches everything inside)
+    \\#   **/build        match at any directory depth
+    \\
+    \\# Version control
+    \\.git/
+    \\.gitignore
+    \\
+    \\# OS generated files
+    \\.DS_Store
+    \\Thumbs.db
+    \\
+    \\# Editor swap / backup files
+    \\*.swp
+    \\*~
+    \\
+;
+
 pub fn run(args: *std.process.ArgIterator) !void {
     var gpa_state: std.heap.GeneralPurposeAllocator(.{}) = .init;
     defer _ = gpa_state.deinit();
@@ -125,6 +149,11 @@ fn writeConfigAndFinish(allocator: std.mem.Allocator, cfg: *const core.config.Co
     const config_path = try core.paths.getConfigPath(allocator);
     defer allocator.free(config_path);
     try core.fs_ops.writeContent(allocator, config_path, toml_content);
+
+    // Generate default .perpetignore
+    const ignore_path = try std.fs.path.join(allocator, &.{ source_dir, ".perpetignore" });
+    defer allocator.free(ignore_path);
+    try core.fs_ops.writeContent(allocator, ignore_path, default_perpetignore);
 
     // git init
     var result = try core.git_ops.gitInit(allocator, source_dir);
