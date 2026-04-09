@@ -16,6 +16,12 @@ pub fn build(b: *std.Build) void {
     });
     mod.addOptions("build_options", options);
 
+    const actus = b.dependency("actus", .{
+        .target = target,
+        .optimize = optimize,
+    });
+    mod.addImport("actus", actus.module("actus"));
+
     const exe = b.addExecutable(.{
         .name = "perpet",
         .root_module = b.createModule(.{

@@ -1,7 +1,7 @@
 const std = @import("std");
 const core = @import("../core/mod.zig");
 const cli = @import("mod.zig");
-const select = @import("select.zig");
+const actus = @import("actus");
 
 pub fn run(args: *std.process.ArgIterator) !void {
     var gpa_state: std.heap.GeneralPurposeAllocator(.{}) = .init;
@@ -48,9 +48,26 @@ pub fn run(args: *std.process.ArgIterator) !void {
             display_items.append(allocator, label) catch std.process.exit(1);
         }
 
-        const selected = select.selectFromList(display_items.items, "Select a file to edit:") orelse {
+        // Use actus ListView with filtering for interactive file selection
+        var list_view = actus.ListView.init(allocator, display_items.items, .{
+            .filterable = true,
+            .filter_placeholder = "Filter files...",
+        });
+        defer list_view.deinit();
+
+        var decorated = actus.Decorated(actus.ListView).init(&list_view, .{
+            .title = "Select a file to edit:",
+        });
+
+        var app = try actus.App.init();
+        defer app.deinit();
+        try app.run(&decorated);
+
+        if (list_view.isCancelled() or list_view.selectedIndex() == null) {
             std.process.exit(0);
-        };
+        }
+
+        const selected = list_view.selectedIndex().?;
 
         // Return the target_rel of the selected file (need to dupe since files will be freed)
         break :blk allocator.dupe(u8, files[selected].target_rel) catch std.process.exit(1);
